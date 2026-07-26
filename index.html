@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buku Kas — Pencatatan Aset & Transaksi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --paper: #F7F2E4;
+    --paper-deep: #ECE4CD;
+    --paper-edge: #DCD0AC;
+    --ink: #202B42;
+    --ink-soft: #5C6584;
+    --ink-faint: #8891A8;
+    --stamp-red: #A23B33;
+    --credit-green: #3E6B4F;
+    --gold: #A9812F;
+    --binder: #C9BC93;
+  }
+  *{box-sizing:border-box;}
+  html{ scroll-behavior:smooth; }
+  body{
+    margin:0;
+    background: var(--paper);
+    background-image:
+      repeating-linear-gradient(var(--paper) 0 33px, var(--paper-edge) 33px 34px),
+      radial-gradient(ellipse at top left, rgba(169,129,47,0.05), transparent 60%);
+    font-family:'Inter', sans-serif;
+    color: var(--ink);
+    min-height:100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection{ background: var(--gold); color: var(--paper); }
+
+  /* Binder holes along the left, like a punched ledger book */
+  .binder{
+    position:fixed;
+    top:0; bottom:0; left:0;
+    width: 46px;
+    z-index:2;
+    pointer-events:none;
+    background: linear-gradient(90deg, var(--paper-deep), transparent);
+    border-right: 1px solid var(--paper-edge);
+  }
+  .binder::before{
+    content:'';
+    position:absolute;
+    top:60px; left:20px;
+    width:9px; height: calc(100% - 120px);
+    background-image: radial-gradient(circle, var(--paper) 3.5px, transparent 3.6px);
+    background-size: 9px 68px;
+    background-repeat: repeat-y;
+    box-shadow: inset 0 0 0 1px var(--binder);
+  }
+  .margin-rule{
+    position:fixed;
+    top:0; bottom:0; left:74px;
+    width:1.5px;
+    background: var(--stamp-red);
+    opacity:0.4;
+    z-index:1;
+  }
+  @media (max-width: 640px){
+    .binder{ width:26px; }
+    .binder::before{ left:11px; }
+    .margin-rule{ left:38px; }
+  }
+
+  .wrap{
+    position:relative;
+    z-index:1;
+    max-width: 1000px;
+    margin:0 auto;
+    padding: 44px 32px 110px 96px;
+  }
+  @media (max-width: 640px){ .wrap{ padding: 30px 18px 100px 54px; } }
+
+  header.top{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:14px;
+    padding-bottom: 22px;
+    margin-bottom: 30px;
+    position:relative;
+  }
+  header.top::after{
+    content:'';
+    position:absolute;
+    left:0; right:0; bottom:0;
+    height:5px;
+    background:
+      linear-gradient(var(--ink), var(--ink)) 0 0/100% 2px no-repeat,
+      linear-gradient(var(--ink), var(--ink)) 0 5px/100% 1px no-repeat;
+  }
+  .brand-block{ display:flex; align-items:center; gap:14px; }
+  .brand-mark{
+    width:44px; height:44px;
+    border: 1.5px solid var(--ink);
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Fraunces', serif;
+    font-weight:700;
+    font-size:18px;
+    flex-shrink:0;
+    position:relative;
+  }
+  .brand-mark::after{
+    content:'';
+    position:absolute; inset:-5px;
+    border:1px dashed var(--gold);
+    border-radius:50%;
+    opacity:0.6;
+  }
+  .brand{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size: 27px;
+    line-height:1.1;
+  }
+  .brand small{
+    display:block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-top:5px;
+  }
+  .date-stamp{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+    color: var(--ink-soft);
+    text-align:right;
+    padding: 8px 12px;
+    border: 1px solid var(--ink-faint);
+    transform: rotate(1.2deg);
+  }
+  .date-stamp b{ display:block; color:var(--ink); font-size:13px; }
+
+  /* Summary strip with stamp badge */
+  .ledger-summary{
+    position:relative;
+    display:grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    border: 1px solid var(--paper-edge);
+    background: rgba(255,255,255,0.35);
+    margin-bottom: 36px;
+    box-shadow: 0 1px 0 rgba(32,43,66,0.05);
+  }
+  @media (max-width: 700px){ .ledger-summary{ grid-template-columns: 1fr; } }
+  .ledger-cell{
+    padding: 22px 24px;
+    border-right: 1px solid var(--paper-edge);
+    position:relative;
+  }
+  .ledger-cell:last-child{ border-right:none; }
+  .ledger-cell .label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color: var(--ink-soft);
+    margin-bottom:9px;
+  }
+  .ledger-cell .value{
+    font-family:'Fraunces', serif;
+    font-size: 30px;
+    font-weight:600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing:-0.3px;
+  }
+  .ledger-cell .value.pos{ color: var(--credit-green); }
+  .ledger-cell .value.neg{ color: var(--stamp-red); }
+
+  .stamp-badge{
+    position:absolute;
+    top:16px; right:18px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:1.5px;
+    font-weight:600;
+    padding: 5px 10px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+    transform: rotate(-6deg);
+    text-transform:uppercase;
+  }
+  .stamp-badge.pos{ color: var(--credit-green); }
+  .stamp-badge.neg{ color: var(--stamp-red); }
+  @media (max-width: 700px){ .stamp-badge{ position:static; display:inline-block; margin-top:8px; transform:rotate(-3deg); } }
+
+  nav.tabs{
+    display:flex;
+    gap: 2px;
+    margin-bottom: 26px;
+    border-bottom: 1px solid var(--paper-edge);
+  }
+  nav.tabs button{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    background:none;
+    border:none;
+    padding: 13px 4px;
+    margin-right: 30px;
+    color: var(--ink-soft);
+    cursor:pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .18s ease, border-color .18s ease;
+  }
+  nav.tabs button:hover{ color: var(--ink); }
+  nav.tabs button.active{
+    color: var(--ink);
+    border-bottom-color: var(--stamp-red);
+    font-weight:600;
+  }
+  nav.tabs button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible{
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+
+  .panel{ display:none; }
+  .panel.active{ display:block; animation: fade .3s ease; }
+  @keyframes fade{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  .section-title{
+    font-family:'Fraunces', serif;
+    font-size: 17px;
+    font-weight:600;
+    margin: 30px 0 14px;
+    display:flex;
+    align-items:center;
+    gap:11px;
+    color: var(--ink);
+  }
+  .section-title .no{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color: var(--paper);
+    background: var(--gold);
+    width:21px; height:21px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%;
+    flex-shrink:0;
+  }
+
+  .charts-grid{
+    display:grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 18px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 780px){ .charts-grid{ grid-template-columns: 1fr; } }
+  .chart-card{
+    background: rgba(255,255,255,0.45);
+    border: 1px solid var(--paper-edge);
+    padding: 18px 20px 14px;
+    position:relative;
+  }
+  .chart-card::before{
+    content:'';
+    position:absolute; top:0; left:0; right:0; height:3px;
+    background: linear-gradient(90deg, var(--gold), transparent 60%);
+    opacity:0.5;
+  }
+  .chart-card h4{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    letter-spacing:1.6px;
+    text-transform:uppercase;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+    font-weight:600;
+  }
+  .chart-card .empty-note{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--ink-faint);
+    text-align:center;
+    padding: 44px 0;
+  }
+
+  form.entry-form{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    background: rgba(255,255,255,0.45);
+    border: 1px solid var(--paper-edge);
+    border-left: 3px solid var(--gold);
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 720px){ form.entry-form{ grid-template-columns: 1fr 1fr; } }
+  form.entry-form .full{ grid-column: 1 / -1; }
+  form.entry-form label{
+    display:block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:9.5px;
+    letter-spacing:1.3px;
+    text-transform:uppercase;
+    color: var(--ink-soft);
+    margin-bottom:6px;
+  }
+  form.entry-form input, form.entry-form select{
+    width:100%;
+    font-family:'Inter', sans-serif;
+    font-size:14px;
+    padding: 9px 10px;
+    border: 1px solid var(--paper-edge);
+    background: #fffdf8;
+    color: var(--ink);
+    border-radius:2px;
+  }
+  .btn{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+    letter-spacing:1.2px;
+    text-transform:uppercase;
+    background: var(--ink);
+    color: var(--paper);
+    border:none;
+    padding: 11px 20px;
+    cursor:pointer;
+    transition: background .15s ease, transform .1s ease;
+    border-radius:2px;
+  }
+  .btn:hover{ background: var(--ink-soft); }
+  .btn:active{ transform: scale(0.98); }
+  .btn.secondary{
+    background:none;
+    color: var(--ink);
+    border: 1px solid var(--ink);
+  }
+  .btn.secondary:hover{ background: rgba(32,43,66,0.06); }
+  .btn.danger{
+    background:none;
+    color: var(--stamp-red);
+    border: 1px solid var(--stamp-red);
+  }
+  .btn.danger:hover{ background: rgba(162,59,51,0.06); }
+
+  table.ledger-table{
+    width:100%;
+    border-collapse: collapse;
+    margin-bottom: 32px;
+  }
+  table.ledger-table th{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:1.3px;
+    text-transform:uppercase;
+    color: var(--ink-soft);
+    text-align:left;
+    padding: 9px 11px;
+    border-bottom: 2px solid var(--ink);
+  }
+  table.ledger-table td{
+    padding: 11px 11px;
+    border-bottom: 1px solid var(--paper-edge);
+    font-size: 13.5px;
+    vertical-align: middle;
+  }
+  table.ledger-table tbody tr:nth-child(odd){ background: rgba(169,129,47,0.035); }
+  table.ledger-table td.num{
+    font-family:'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    text-align:right;
+  }
+  table.ledger-table td.num.pos{ color: var(--credit-green); }
+  table.ledger-table td.num.neg{ color: var(--stamp-red); }
+  table.ledger-table tr:hover td{ background: rgba(169,129,47,0.08); }
+  .row-actions{ white-space:nowrap; text-align:right; }
+  .icon-btn{
+    background:none;
+    border:none;
+    cursor:pointer;
+    color: var(--ink-faint);
+    font-size: 13px;
+    padding: 3px 6px;
+    transition: color .15s ease;
+  }
+  .icon-btn:hover{ color: var(--stamp-red); }
+
+  .empty-state{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    color: var(--ink-faint);
+    padding: 34px 10px;
+    text-align:center;
+    border: 1px dashed var(--paper-edge);
+    margin-bottom: 26px;
+    background: rgba(255,255,255,0.25);
+  }
+
+  .toolbar{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    margin: 24px 0 8px;
+    flex-wrap:wrap;
+  }
+  footer.foot{
+    margin-top: 52px;
+    padding-top: 18px;
+    border-top: 1px solid var(--paper-edge);
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  #toast{
+    position:fixed;
+    bottom: 22px;
+    left:50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink);
+    color: var(--paper);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    padding: 11px 20px;
+    opacity:0;
+    transition: all .25s ease;
+    pointer-events:none;
+    z-index: 50;
+    border-radius:2px;
+  }
+  #toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  input[type="file"]{ display:none; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="binder"></div>
+<div class="margin-rule"></div>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand-block">
+      <div class="brand-mark">Bk</div>
+      <div class="brand">Buku Kas<small>Pencatatan Aset · Utang · Transaksi</small></div>
+    </div>
+    <div class="date-stamp"><b id="todayStamp"></b>Dicatat hari ini</div>
+  </header>
+
+  <div class="ledger-summary">
+    <div class="ledger-cell">
+      <div class="label">Kekayaan Bersih</div>
+      <div class="value" id="netWorthValue">Rp 0</div>
+      <div class="stamp-badge" id="netWorthBadge">Surplus</div>
+    </div>
+    <div class="ledger-cell">
+      <div class="label">Total Aset</div>
+      <div class="value pos" id="totalAssetValue">Rp 0</div>
+    </div>
+    <div class="ledger-cell">
+      <div class="label">Total Utang</div>
+      <div class="value neg" id="totalDebtValue">Rp 0</div>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <button class="active" data-tab="ringkasan">Ringkasan</button>
+    <button data-tab="aset">Aset & Utang</button>
+    <button data-tab="transaksi">Transaksi</button>
+  </nav>
+
+  <!-- RINGKASAN -->
+  <section class="panel active" id="panel-ringkasan">
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h4>Tren Kekayaan Bersih (per bulan)</h4>
+        <canvas id="netWorthChart" height="180"></canvas>
+      </div>
+      <div class="chart-card">
+        <h4>Komposisi Aset</h4>
+        <canvas id="assetPieChart" height="180"></canvas>
+      </div>
+    </div>
+    <div class="chart-card" style="margin-top:20px;">
+      <h4>Pemasukan vs Pengeluaran (6 bulan terakhir)</h4>
+      <canvas id="cashflowChart" height="90"></canvas>
+    </div>
+  </section>
+
+  <!-- ASET & UTANG -->
+  <section class="panel" id="panel-aset">
+    <div class="section-title"><span class="no">1</span> Catat Aset atau Utang</div>
+    <form class="entry-form" id="assetForm">
+      <div>
+        <label>Jenis</label>
+        <select id="assetType">
+          <option value="aset">Aset</option>
+          <option value="utang">Utang</option>
+        </select>
+      </div>
+      <div>
+        <label>Kategori</label>
+        <select id="assetCategory">
+          <option>Tabungan / Kas</option>
+          <option>Deposito</option>
+          <option>Saham / Reksadana</option>
+          <option>Emas / Logam Mulia</option>
+          <option>Properti</option>
+          <option>Kendaraan</option>
+          <option>Kartu Kredit</option>
+          <option>KPR / Cicilan</option>
+          <option>Pinjaman Lain</option>
+          <option>Lainnya</option>
+        </select>
+      </div>
+      <div class="full" style="grid-column: span 2;">
+        <label>Nama Item</label>
+        <input type="text" id="assetName" placeholder="contoh: BCA Tabungan, Rumah Depok">
+      </div>
+      <div>
+        <label>Nilai (Rp)</label>
+        <input type="number" id="assetValue" placeholder="0" min="0">
+      </div>
+      <div style="display:flex; align-items:flex-end;">
+        <button type="submit" class="btn" style="width:100%;">Simpan Catatan</button>
+      </div>
+    </form>
+
+    <div class="section-title"><span class="no">2</span> Daftar Aset</div>
+    <div id="assetTableWrap"></div>
+
+    <div class="section-title"><span class="no">3</span> Daftar Utang</div>
+    <div id="debtTableWrap"></div>
+  </section>
+
+  <!-- TRANSAKSI -->
+  <section class="panel" id="panel-transaksi">
+    <div class="section-title"><span class="no">1</span> Catat Transaksi</div>
+    <form class="entry-form" id="txForm">
+      <div>
+        <label>Tanggal</label>
+        <input type="date" id="txDate">
+      </div>
+      <div>
+        <label>Jenis</label>
+        <select id="txType">
+          <option value="masuk">Pemasukan</option>
+          <option value="keluar">Pengeluaran</option>
+        </select>
+      </div>
+      <div>
+        <label>Kategori</label>
+        <select id="txCategory">
+          <option>Gaji</option>
+          <option>Bonus / Insentif</option>
+          <option>Makanan & Minuman</option>
+          <option>Transportasi</option>
+          <option>Tagihan / Utilitas</option>
+          <option>Hiburan</option>
+          <option>Kesehatan</option>
+          <option>Belanja</option>
+          <option>Cicilan</option>
+          <option>Lainnya</option>
+        </select>
+      </div>
+      <div>
+        <label>Nominal (Rp)</label>
+        <input type="number" id="txAmount" placeholder="0" min="0">
+      </div>
+      <div class="full">
+        <label>Catatan (opsional)</label>
+        <input type="text" id="txNote" placeholder="contoh: makan siang tim">
+      </div>
+      <div class="full" style="text-align:right;">
+        <button type="submit" class="btn">Simpan Transaksi</button>
+      </div>
+    </form>
+
+    <div class="section-title"><span class="no">2</span> Riwayat Transaksi</div>
+    <div id="txTableWrap"></div>
+  </section>
+
+  <div class="toolbar">
+    <button class="btn secondary" id="exportBtn">Ekspor Cadangan (.json)</button>
+    <label class="btn secondary" for="importInput">Impor Cadangan</label>
+    <input type="file" id="importInput" accept="application/json">
+    <button class="btn danger" id="resetBtn">Hapus Semua Data</button>
+  </div>
+
+  <footer class="foot">
+    <span>Data tersimpan di browser ini (localStorage) — tidak dikirim ke server mana pun.</span>
+    <span id="entryCount">0 catatan</span>
+  </footer>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  const STORE_KEY = 'bukukas_data_v1';
+  const state = loadState();
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      if(raw) return JSON.parse(raw);
+    }catch(e){}
+    return { assets: [], transactions: [] };
+  }
+  function saveState(){
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    renderAll();
+  }
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+  function rupiah(n){
+    const sign = n < 0 ? '-' : '';
+    return sign + 'Rp ' + Math.abs(Math.round(n)).toLocaleString('id-ID');
+  }
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(()=> t.classList.remove('show'), 2200);
+  }
+
+  // ---------- Tabs ----------
+  document.querySelectorAll('nav.tabs button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---------- Date stamp ----------
+  document.getElementById('todayStamp').textContent = new Date().toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' });
+  document.getElementById('txDate').value = new Date().toISOString().slice(0,10);
+
+  // ---------- Asset form ----------
+  document.getElementById('assetForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const name = document.getElementById('assetName').value.trim();
+    const value = parseFloat(document.getElementById('assetValue').value);
+    if(!name || isNaN(value) || value < 0){ toast('Isi nama dan nilai yang valid'); return; }
+    state.assets.push({
+      id: uid(),
+      type: document.getElementById('assetType').value,
+      category: document.getElementById('assetCategory').value,
+      name, value,
+      createdAt: new Date().toISOString()
+    });
+    document.getElementById('assetName').value = '';
+    document.getElementById('assetValue').value = '';
+    saveState();
+    toast('Catatan disimpan');
+  });
+
+  // ---------- Transaction form ----------
+  document.getElementById('txForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const amount = parseFloat(document.getElementById('txAmount').value);
+    if(isNaN(amount) || amount <= 0){ toast('Isi nominal yang valid'); return; }
+    state.transactions.push({
+      id: uid(),
+      date: document.getElementById('txDate').value || new Date().toISOString().slice(0,10),
+      type: document.getElementById('txType').value,
+      category: document.getElementById('txCategory').value,
+      amount,
+      note: document.getElementById('txNote').value.trim()
+    });
+    document.getElementById('txAmount').value = '';
+    document.getElementById('txNote').value = '';
+    saveState();
+    toast('Transaksi disimpan');
+  });
+
+  // ---------- Delete handlers (event delegation) ----------
+  document.addEventListener('click', function(e){
+    const del = e.target.closest('[data-del-asset]');
+    if(del){
+      state.assets = state.assets.filter(a => a.id !== del.dataset.delAsset);
+      saveState();
+      toast('Catatan dihapus');
+      return;
+    }
+    const delTx = e.target.closest('[data-del-tx]');
+    if(delTx){
+      state.transactions = state.transactions.filter(t => t.id !== delTx.dataset.delTx);
+      saveState();
+      toast('Transaksi dihapus');
+    }
+  });
+
+  // ---------- Export / Import / Reset ----------
+  document.getElementById('exportBtn').addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type:'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bukukas-cadangan-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Cadangan diunduh');
+  });
+  document.getElementById('importInput').addEventListener('change', function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        const data = JSON.parse(ev.target.result);
+        if(!Array.isArray(data.assets) || !Array.isArray(data.transactions)) throw new Error('format tidak sesuai');
+        state.assets = data.assets;
+        state.transactions = data.transactions;
+        saveState();
+        toast('Cadangan berhasil diimpor');
+      }catch(err){
+        toast('Gagal impor: file tidak valid');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    if(confirm('Yakin ingin menghapus semua data? Tindakan ini tidak bisa dibatalkan.')){
+      state.assets = [];
+      state.transactions = [];
+      saveState();
+      toast('Semua data dihapus');
+    }
+  });
+
+  // ---------- Rendering ----------
+  let netWorthChartInst, assetPieChartInst, cashflowChartInst;
+  let lastNetWorth = null;
+
+  function animateNumber(el, from, to, formatFn, duration){
+    duration = duration || 550;
+    const start = performance.now();
+    function step(now){
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const val = from + (to - from) * eased;
+      el.textContent = formatFn(val);
+      if(t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function renderSummary(){
+    const totalAsset = state.assets.filter(a=>a.type==='aset').reduce((s,a)=>s+a.value,0);
+    const totalDebt = state.assets.filter(a=>a.type==='utang').reduce((s,a)=>s+a.value,0);
+    const netWorth = totalAsset - totalDebt;
+
+    const nwEl = document.getElementById('netWorthValue');
+    const prev = lastNetWorth === null ? netWorth : lastNetWorth;
+    animateNumber(nwEl, prev, netWorth, rupiah);
+    lastNetWorth = netWorth;
+    nwEl.className = 'value ' + (netWorth>=0?'pos':'neg');
+
+    const badge = document.getElementById('netWorthBadge');
+    badge.textContent = netWorth >= 0 ? 'Surplus' : 'Defisit';
+    badge.className = 'stamp-badge ' + (netWorth>=0?'pos':'neg');
+
+    document.getElementById('totalAssetValue').textContent = rupiah(totalAsset);
+    document.getElementById('totalDebtValue').textContent = rupiah(totalDebt);
+    document.getElementById('entryCount').textContent = (state.assets.length + state.transactions.length) + ' catatan';
+  }
+
+  function renderAssetTables(){
+    const assetWrap = document.getElementById('assetTableWrap');
+    const debtWrap = document.getElementById('debtTableWrap');
+    const assets = state.assets.filter(a=>a.type==='aset').sort((a,b)=> b.value - a.value);
+    const debts = state.assets.filter(a=>a.type==='utang').sort((a,b)=> b.value - a.value);
+
+    function buildTable(rows, isAsset){
+      if(rows.length === 0) return '<div class="empty-state">Belum ada catatan ' + (isAsset?'aset':'utang') + '. Isi formulir di atas untuk memulai.</div>';
+      let html = '<table class="ledger-table"><thead><tr><th>Nama</th><th>Kategori</th><th style="text-align:right;">Nilai</th><th></th></tr></thead><tbody>';
+      rows.forEach(r=>{
+        html += '<tr><td>'+escapeHtml(r.name)+'</td><td>'+escapeHtml(r.category)+'</td>' +
+          '<td class="num '+(isAsset?'pos':'neg')+'">'+rupiah(r.value)+'</td>' +
+          '<td class="row-actions"><button class="icon-btn" data-del-asset="'+r.id+'" title="Hapus">✕</button></td></tr>';
+      });
+      html += '</tbody></table>';
+      return html;
+    }
+    assetWrap.innerHTML = buildTable(assets, true);
+    debtWrap.innerHTML = buildTable(debts, false);
+  }
+
+  function renderTxTable(){
+    const wrap = document.getElementById('txTableWrap');
+    const txs = [...state.transactions].sort((a,b)=> new Date(b.date) - new Date(a.date));
+    if(txs.length === 0){
+      wrap.innerHTML = '<div class="empty-state">Belum ada transaksi tercatat. Catat pemasukan atau pengeluaran pertamamu di atas.</div>';
+      return;
+    }
+    let html = '<table class="ledger-table"><thead><tr><th>Tanggal</th><th>Kategori</th><th>Catatan</th><th style="text-align:right;">Jumlah</th><th></th></tr></thead><tbody>';
+    txs.forEach(t=>{
+      const isIn = t.type === 'masuk';
+      html += '<tr><td>'+formatDate(t.date)+'</td><td>'+escapeHtml(t.category)+'</td><td>'+escapeHtml(t.note||'—')+'</td>' +
+        '<td class="num '+(isIn?'pos':'neg')+'">'+(isIn?'+':'-')+rupiah(t.amount).replace('Rp ','Rp ')+'</td>' +
+        '<td class="row-actions"><button class="icon-btn" data-del-tx="'+t.id+'" title="Hapus">✕</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  }
+
+  function formatDate(d){
+    const dt = new Date(d);
+    if(isNaN(dt)) return d;
+    return dt.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' });
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderCharts(){
+    const ink = '#202B42', inkSoft='#5C6584', green='#3E6B4F', rust='#A23B33', gold='#A9812F', lineColor='#DCD0AC';
+
+    const months = [];
+    const now = new Date();
+    for(let i=5;i>=0;i--){
+      const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+      months.push(d);
+    }
+    const netWorthSeries = months.map(m=>{
+      const cutoff = new Date(m.getFullYear(), m.getMonth()+1, 0);
+      const relevantAssets = state.assets.filter(a => new Date(a.createdAt) <= cutoff);
+      const ta = relevantAssets.filter(a=>a.type==='aset').reduce((s,a)=>s+a.value,0);
+      const td = relevantAssets.filter(a=>a.type==='utang').reduce((s,a)=>s+a.value,0);
+      return ta - td;
+    });
+    const monthLabels = months.map(m=> m.toLocaleDateString('id-ID',{month:'short', year:'2-digit'}));
+
+    if(netWorthChartInst) netWorthChartInst.destroy();
+    netWorthChartInst = new Chart(document.getElementById('netWorthChart'), {
+      type:'line',
+      data:{ labels: monthLabels, datasets:[{
+        label:'Kekayaan Bersih',
+        data: netWorthSeries,
+        borderColor: ink,
+        backgroundColor: 'rgba(32,43,66,0.08)',
+        fill:true, tension:0.3, pointRadius:3, pointBackgroundColor: gold
+      }]},
+      options:{
+        plugins:{ legend:{ display:false } },
+        scales:{
+          y:{ ticks:{ callback:(v)=> 'Rp ' + (v/1000000).toFixed(1)+'jt', color: inkSoft, font:{family:'IBM Plex Mono', size:10} }, grid:{ color:lineColor } },
+          x:{ ticks:{ color: inkSoft, font:{family:'IBM Plex Mono', size:10} }, grid:{ display:false } }
+        }
+      }
+    });
+
+    const assetsOnly = state.assets.filter(a=>a.type==='aset');
+    const byCat = {};
+    assetsOnly.forEach(a=>{ byCat[a.category] = (byCat[a.category]||0) + a.value; });
+    const catLabels = Object.keys(byCat);
+    const catValues = Object.values(byCat);
+    const pieColors = [ink, green, gold, rust, inkSoft, '#7A8FBF', '#C9A46A', '#8FA98A'];
+
+    if(assetPieChartInst) assetPieChartInst.destroy();
+    const pieCanvas = document.getElementById('assetPieChart');
+    if(catLabels.length === 0){
+      pieCanvas.parentElement.querySelector('.empty-note')?.remove();
+      const note = document.createElement('div');
+      note.className='empty-note';
+      note.textContent='Belum ada data aset untuk ditampilkan.';
+      pieCanvas.style.display='none';
+      pieCanvas.parentElement.appendChild(note);
+    } else {
+      pieCanvas.style.display='block';
+      pieCanvas.parentElement.querySelector('.empty-note')?.remove();
+      assetPieChartInst = new Chart(pieCanvas, {
+        type:'doughnut',
+        data:{ labels: catLabels, datasets:[{ data: catValues, backgroundColor: pieColors, borderColor: '#F7F2E4', borderWidth:2 }]},
+        options:{ plugins:{ legend:{ position:'bottom', labels:{ color: ink, font:{family:'Inter', size:11}, boxWidth:10 } } } }
+      });
+    }
+
+    const inSeries = months.map(m=>{
+      return state.transactions.filter(t=>{
+        const d = new Date(t.date);
+        return t.type==='masuk' && d.getFullYear()===m.getFullYear() && d.getMonth()===m.getMonth();
+      }).reduce((s,t)=>s+t.amount,0);
+    });
+    const outSeries = months.map(m=>{
+      return state.transactions.filter(t=>{
+        const d = new Date(t.date);
+        return t.type==='keluar' && d.getFullYear()===m.getFullYear() && d.getMonth()===m.getMonth();
+      }).reduce((s,t)=>s+t.amount,0);
+    });
+
+    if(cashflowChartInst) cashflowChartInst.destroy();
+    cashflowChartInst = new Chart(document.getElementById('cashflowChart'), {
+      type:'bar',
+      data:{ labels: monthLabels, datasets:[
+        { label:'Pemasukan', data:inSeries, backgroundColor: green },
+        { label:'Pengeluaran', data:outSeries, backgroundColor: rust }
+      ]},
+      options:{
+        plugins:{ legend:{ position:'bottom', labels:{ color: ink, font:{family:'Inter', size:11} } } },
+        scales:{
+          y:{ ticks:{ callback:(v)=> 'Rp ' + (v/1000000).toFixed(1)+'jt', color: inkSoft, font:{family:'IBM Plex Mono', size:10} }, grid:{ color: lineColor } },
+          x:{ ticks:{ color: inkSoft, font:{family:'IBM Plex Mono', size:10} }, grid:{ display:false } }
+        }
+      }
+    });
+  }
+
+  function renderAll(){
+    renderSummary();
+    renderAssetTables();
+    renderTxTable();
+    renderCharts();
+  }
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
